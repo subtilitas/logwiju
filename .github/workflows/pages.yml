@@ -81,7 +81,11 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
+      # enablement: true turns Pages on via the API if it isn't already, so
+      # there is no need to flip the switch in Settings by hand first.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       # The site is static and needs no build step, so publish the tag as-is.
       - uses: actions/upload-pages-artifact@v3

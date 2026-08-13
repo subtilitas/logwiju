@@ -3,11 +3,22 @@ name: Deploy latest release to GitHub Pages
 # The published site always reflects the most recent release, not the tip of
 # main. Pushing to main changes nothing that is live until you cut a release.
 #
-# One-time setup: Settings -> Pages -> Source: "GitHub Actions".
-# The workflow token cannot turn Pages on by itself (creating a Pages site
-# needs repo admin rights, which GITHUB_TOKEN does not have), so this switch
-# has to be flipped by hand once. Until it is, the deploy job fails with
-# "Resource not accessible by integration".
+# Two one-time settings are needed, both requiring repo admin rights that
+# GITHUB_TOKEN does not have, so neither can be automated from here:
+#
+#   1. Settings -> Pages -> Source: "GitHub Actions".
+#      Otherwise the deploy fails with "Resource not accessible by integration".
+#
+#   2. Settings -> Environments -> github-pages -> Deployment branches and tags
+#      -> add a rule with ref type "Tag" and pattern "v*".
+#      The environment ships allowing only the default branch. Because this
+#      workflow is triggered by a release, the run's ref is the tag (e.g.
+#      refs/tags/v1.1), which that default policy rejects with "Tag v1.1 is not
+#      allowed to deploy to github-pages due to environment protection rules".
+#      Equivalent one-liner:
+#        gh api --method POST \
+#          repos/OWNER/REPO/environments/github-pages/deployment-branch-policies \
+#          -f name='v*' -f type='tag'
 on:
   release:
     types: [published]

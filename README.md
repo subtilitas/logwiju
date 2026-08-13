@@ -15,10 +15,27 @@ browser and never leaves your machine.
 The published site tracks the **latest release**, not the tip of `main`. Pushing
 to `main` changes nothing that is live; publishing a release deploys it.
 
-One-time setup: **Settings → Pages → Source: "GitHub Actions"**. The workflow
-token can't enable Pages itself — creating a Pages site needs repo admin rights
-that `GITHUB_TOKEN` doesn't have — so this switch has to be flipped by hand once.
-Until it is, the deploy fails with `Resource not accessible by integration`.
+Two one-time settings are needed. Both require repo admin rights that
+`GITHUB_TOKEN` doesn't have, so the workflow can't apply them itself:
+
+1. **Settings → Pages → Source: "GitHub Actions"**
+   Otherwise the deploy fails with `Resource not accessible by integration`.
+
+2. **Settings → Environments → github-pages → Deployment branches and tags →
+   Add rule → Ref type: Tag → `v*`**
+   The environment ships allowing only the default branch. Since this workflow
+   is triggered by a release, the run's ref is the tag, which that default
+   policy rejects with `Tag v1.1 is not allowed to deploy to github-pages due
+   to environment protection rules`.
+
+Both in one command each, if you have `gh`:
+
+```bash
+gh api --method POST repos/OWNER/REPO/pages \
+  -f 'build_type=workflow'
+gh api --method POST repos/OWNER/REPO/environments/github-pages/deployment-branch-policies \
+  -f name='v*' -f type='tag'
+```
 
 To ship a new version, cut a release (Releases → Draft a new release → pick a
 tag → Publish). The workflow in `.github/workflows/pages.yml` then runs the

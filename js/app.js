@@ -7,14 +7,18 @@
  */
 
 import { parseBlackbox } from './bbl-parser.js';
+import { buildCsvLog, looksLikeCsv } from './csv-parser.js';
+import { ImportDialog } from './import-dialog.js';
 import { BlackboxRenderer, colorForIndex, formatValue } from './renderer.js';
 import { ViewController } from './interaction.js';
+import { haptics } from './haptics.js';
 
 const $ = (sel) => document.querySelector(sel);
 
 const canvas = $('#chart');
 const renderer = new BlackboxRenderer(canvas);
 const controller = new ViewController(renderer, canvas, $('#scrollbar'), updateReadout);
+const importDialog = new ImportDialog($('#import-dialog'));
 
 let logs = [];
 let log = null;
@@ -65,6 +69,12 @@ async function loadFile(file) {
   setStatus(`Reading ${file.name}…`);
   try {
     const buf = new Uint8Array(await file.arrayBuffer());
+
+    if (looksLikeCsv(file.name, buf)) {
+      await loadCsv(buf, file.name);
+      return;
+    }
+
     const t0 = performance.now();
     logs = parseBlackbox(buf);
     const ms = performance.now() - t0;
@@ -81,6 +91,38 @@ async function loadFile(file) {
     console.error(err);
     setStatus(err.message, 'error');
   }
+}
+
+/** CSV goes through the import dialog so the user confirms how it is read. */
+async function loadCsv(buf, name) {
+  const text = new TextDecoder('utf-8').decode(buf);
+  setStatus('Checking CSV…');
+
+  let analysis;
+  try {
+    analysis = await importDialog.open(text, name);
+  } catch (err) {
+    setStatus(err.message, 'error');
+    return;
+  }
+  if (!analysis) {
+    setStatus('Import cancelled');
+    return;
+  }
+
+  const t0 = performance.now();
+  const log = buildCsvLog(analysis, { name });
+  const ms = performance.now() - t0;
+
+  logs = [log];
+  $('#file-name').textContent = name;
+  buildSessionPicker();
+  selectSession(0);
+  document.body.classList.add('has-log');
+
+  const bits = [`${log.count.toLocaleString()} rows in ${ms.toFixed(0)} ms`];
+  if (log.csv.unparsedCells) bits.push(`${log.csv.unparsedCells} unreadable cells`);
+  setStatus(bits.join(' · '), log.csv.unparsedCells ? '' : 'ok');
 }
 
 function buildSessionPicker() {
@@ -199,18 +241,34 @@ function refreshSwatches() {
 function buildInfoPanel() {
   const s = log.stats;
   const h = log.header;
+  const isCsv = log.source === 'csv';
+
   const rows = [
-    ['Craft', h.craftName || '—'],
-    ['Firmware', h.firmware],
-    ['Frames', `${s.frames.toLocaleString()} (${s.iFrames} I / ${s.pFrames} P)`],
+    [isCsv ? 'Source' : 'Craft', h.craftName || '—'],
+    [isCsv ? 'Format' : 'Firmware', h.firmware],
+    [
+      isCsv ? 'Rows' : 'Frames',
+      isCsv
+        ? s.frames.toLocaleString()
+        : `${s.frames.toLocaleString()} (${s.iFrames} I / ${s.pFrames} P)`,
+    ],
     ['Duration', `${s.durationSec.toFixed(2)} s`],
     ['Rate', `${s.sampleRateHz.toFixed(0)} Hz nominal · ${s.avgRateHz.toFixed(0)} Hz avg`],
     ['Largest gap', `${(s.maxGapSec * 1000).toFixed(1)} ms`],
     ['Fields', String(log.fields.length)],
   ];
-  if (s.corrupt) rows.push(['Corrupt frames', String(s.corrupt)]);
-  if (log.events.length) {
-    rows.push(['Events', log.events.map((e) => e.name).join(', ')]);
+
+  if (isCsv) {
+    rows.push(['Time axis', log.csv.timeColumn ? `${log.csv.timeColumn} (${log.csv.timeUnit})` : 'row number']);
+    if (log.csv.unparsedCells) rows.push(['Unreadable cells', String(log.csv.unparsedCells)]);
+    if (log.csv.skippedColumns.length) {
+      rows.push(['Ignored columns', log.csv.skippedColumns.join(', ')]);
+    }
+  } else {
+    if (s.corrupt) rows.push(['Corrupt frames', String(s.corrupt)]);
+    if (log.events.length) {
+      rows.push(['Events', log.events.map((e) => e.name).join(', ')]);
+    }
   }
 
   $('#info').innerHTML = rows
@@ -295,8 +353,43 @@ function setStatus(msg, kind = '') {
   el.className = kind;
 }
 
+// ---------------------------------------------------------------------------
+// Haptics switch
+// ---------------------------------------------------------------------------
+
+const hapticsSelect = $('#haptics');
+if (haptics.supported) {
+  hapticsSelect.value = haptics.level;
+  hapticsSelect.addEventListener('change', () => haptics.setLevel(hapticsSelect.value));
+} else {
+  // No vibration motor or no browser support: say so rather than offering a
+  // control that silently does nothing.
+  $('#haptics-wrap').classList.add('unsupported');
+  hapticsSelect.disabled = true;
+  hapticsSelect.title = 'This browser or device does not support vibration';
+}
+
 // Initial paint (empty state)
 controller.requestRender();
 
 // Signals to the boot check in index.html that the modules loaded successfully.
 window.__logwijuLoaded = true;
+
+// Small debug handle: lets you poke at the view from the console, and lets the
+// browser tests measure against real geometry instead of duplicating layout
+// constants that would silently drift out of sync.
+window.__logwiju = {
+  get renderer() {
+    return renderer;
+  },
+  get controller() {
+    return controller;
+  },
+  get log() {
+    return log;
+  },
+  get series() {
+    return series;
+  },
+  haptics,
+};

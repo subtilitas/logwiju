@@ -48,15 +48,19 @@ blank page.
 
 Click **Open log…** or drag a log file anywhere onto the window.
 
-| Action | Control |
-| --- | --- |
-| Zoom | Mouse wheel (zooms around the pointer) |
-| Pan | Click and drag, or `←` / `→` |
-| Zoom to a range | Shift + drag |
-| Scroll horizontally | Shift + wheel, or drag the scrollbar |
-| Fit whole log | Double-click, `0`, or the **Fit** button |
-| Zoom in / out | `+` / `−` |
-| Jump to start / end | `Home` / `End` |
+| Action | Mouse / keyboard | Touch |
+| --- | --- | --- |
+| Zoom | Wheel (around the pointer) | Pinch (around the midpoint) |
+| Pan | Drag, or `←` / `→` | Drag with one or two fingers |
+| Zoom to a range | Shift + drag | — |
+| Scroll horizontally | Shift + wheel, or the scrollbar | Drag the scrollbar |
+| Fit whole log | Double-click, `0`, **Fit** | Double-tap |
+| Zoom in / out | `+` / `−` | — |
+| Jump to start / end | `Home` / `End` | — |
+
+Pinch keeps the time under the midpoint of your fingers pinned in place, the
+same way wheel zoom pins the time under the pointer, so the content never
+creeps while you gesture.
 
 Each selected field gets its own lane with an independently auto-scaled Y axis,
 so a 100 000 eRPM trace and a 14 V trace stay readable side by side. Moving the
@@ -67,6 +71,70 @@ The field list on the left is built from the log itself. Fields are grouped
 (Gyro, PID, Motor, RPM, Power, ESC, …) and each one shows its range over the
 whole log. Fields that never change are dimmed, since they usually mean a sensor
 that was not connected.
+
+### Haptics
+
+On devices with a vibration motor, gestures get short haptic feedback. The
+selector in the toolbar sets how much:
+
+| Level | Buzzes on |
+| --- | --- |
+| Off | nothing |
+| Limits only | hitting the end of the log or the zoom limit |
+| Gesture edges *(default)* | the above, plus a gesture starting and ending |
+| Full | the above, plus a tick as the crosshair snaps to each sample |
+
+Every pattern is a few milliseconds and the whole thing is rate limited, since
+scrubbing a chart fires far more events than a motor can usefully respond to.
+The control is disabled where `navigator.vibrate` is unavailable — notably iOS
+Safari — rather than silently doing nothing. The setting persists across
+reloads.
+
+## CSV files
+
+Anything that isn't a blackbox log is treated as CSV, with column names on the
+first line. Values may carry their unit inline — `10.23A`, `22,34V`, `-3,5 °C`,
+`12 %` — and the unit becomes the lane's axis label. Units written in the header
+instead (`voltage (V)`, `speed [km/h]`, `altitude m`) work equally well.
+
+Importing opens a dialog with a live preview, because the settings below can
+change what the numbers *mean*, and a silently misread file is much worse than
+one that refuses to load:
+
+- **Delimiter** — auto-detected from `;`, `,`, tab or `|` by picking the one
+  that splits most consistently
+- **Decimal numbers** — auto, German (`1.234,56`) or English (`1,234.56`)
+- **What an undecidable `1,234` means** — a thousands group (`1234`) or a
+  decimal (`1.234`)
+- **Time column and its unit** — s, ms, µs or min, or no time column at all, in
+  which case the row number becomes the x axis
+
+Cells that cannot be read under the current settings are struck through in red,
+and columns that fail wholesale are called out by name, so choosing the wrong
+convention is immediately obvious rather than quietly halving your voltages.
+
+### How German and English numbers are told apart
+
+`1,234` is genuinely ambiguous — German reads 1.234, English reads 1234. Guessing
+per value would be unsafe, since the same column could then parse under two
+different conventions, which no real exporter produces. So the convention is
+decided for the **whole file** from whichever values settle it:
+
+| Value | Reading |
+| --- | --- |
+| `1.234,56` | both separators — the last one is the decimal → German |
+| `1,234.56` | both separators — the last one is the decimal → English |
+| `10,23` | one separator, 2 trailing digits — not a thousands group → German |
+| `1.5` | one separator, 1 trailing digit — not a thousands group → English |
+| `1.234.567` | repeated — that separator groups → German |
+| `1,234` | one separator, exactly 3 trailing digits → no evidence |
+
+A single `10,23` anywhere in the file therefore proves comma-decimal, and every
+`1,234` in it is read as 1.234. Only when *nothing* in the file settles it does
+the fallback apply, and the dialog says so explicitly.
+
+Values are also validated against the chosen convention rather than coerced:
+reading the German `1.234,56` as English yields nothing, not `1.23456`.
 
 ## What it handles
 
@@ -108,14 +176,21 @@ The example log (17 125 frames, 12 fields, 215 KB) decodes in around 60 ms.
 ## Layout
 
 ```
-index.html            markup and the boot check
-css/style.css         styling
-js/bbl-parser.js      blackbox decoder (no DOM dependencies, runs in Node too)
-js/renderer.js        canvas drawing: lanes, axes, envelopes, crosshair
-js/interaction.js     zoom, pan, scrollbar, keyboard
-js/app.js             wiring: file loading, field list, readouts
-test/verify.mjs       decoder regression test against the example log
-exmple_log/           example log used by the test
+index.html               markup, import dialog, boot check
+css/style.css            styling
+js/bbl-parser.js         blackbox decoder (no DOM deps, runs in Node too)
+js/numbers.js            locale-tolerant number + unit parsing
+js/csv-parser.js         CSV -> the same log object the renderer takes
+js/import-dialog.js      CSV import options with live preview
+js/renderer.js           canvas drawing: lanes, axes, envelopes, crosshair
+js/interaction.js        wheel/pointer/pinch zoom, pan, scrollbar, keyboard
+js/haptics.js            rate-limited vibration feedback
+js/app.js                wiring: file loading, field list, readouts
+test/verify.mjs          decoder regression test against the example log
+test/verify-numbers.mjs  German/English/ambiguous number handling
+test/verify-csv.mjs      delimiter, quoting, ragged rows, time scaling
+test/fixtures/           small CSVs covering both conventions
+exmple_log/              example log used by the tests
 ```
 
 `js/bbl-parser.js` has no browser dependencies, so it can be used on its own:
@@ -132,12 +207,16 @@ console.log(logs[0].time);            // Float64Array of seconds
 ## Tests
 
 ```bash
-node test/verify.mjs
+node test/verify.mjs          # blackbox decoder
+node test/verify-numbers.mjs  # German/English/ambiguous numbers, units
+node test/verify-csv.mjs      # delimiters, quoting, ragged rows, time scaling
 ```
 
-This decodes `exmple_log/LOG00015.BFL` and asserts the frame count, duration,
-sample rate and per-field min/max against values derived independently, so a
-regression in any encoding or predictor shows up immediately.
+`verify.mjs` decodes `exmple_log/LOG00015.BFL` and asserts frame count,
+duration, sample rate and per-field min/max against values derived
+independently, so a regression in any encoding or predictor shows up
+immediately. The other two cover the parts of CSV import that can go wrong
+quietly. All three run in CI and block a release if they fail.
 
 ## Licence
 

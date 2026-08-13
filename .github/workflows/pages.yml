@@ -68,11 +68,16 @@ jobs:
         with:
           node-version: 22
 
-      # Decodes exmple_log/LOG00015.BFL and asserts frame count, duration,
-      # sample rate and per-field min/max. Exits non-zero on any mismatch, so a
-      # broken encoding or predictor blocks the release from going live.
-      - name: Run decoder regression test
-        run: node test/verify.mjs
+      # verify:         decodes exmple_log/LOG00015.BFL and asserts frame count,
+      #                 duration, rate and per-field min/max
+      # verify-numbers: German/English/ambiguous decimal handling and units
+      # verify-csv:     delimiter sniffing, quoting, ragged rows, time scaling
+      # Any mismatch exits non-zero and blocks the release from going live.
+      - name: Run decoder regression tests
+        run: |
+          node test/verify.mjs
+          node test/verify-numbers.mjs
+          node test/verify-csv.mjs
 
   deploy:
     name: Deploy

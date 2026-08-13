@@ -15,6 +15,11 @@ browser and never leaves your machine.
 The published site tracks the **latest release**, not the tip of `main`. Pushing
 to `main` changes nothing that is live; publishing a release deploys it.
 
+One-time setup: **Settings → Pages → Source: "GitHub Actions"**. The workflow
+token can't enable Pages itself — creating a Pages site needs repo admin rights
+that `GITHUB_TOKEN` doesn't have — so this switch has to be flipped by hand once.
+Until it is, the deploy fails with `Resource not accessible by integration`.
+
 To ship a new version, cut a release (Releases → Draft a new release → pick a
 tag → Publish). The workflow in `.github/workflows/pages.yml` then runs the
 decoder test and, only if it passes, deploys that tag. Publishing an older

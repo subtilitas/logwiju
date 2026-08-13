@@ -2,6 +2,12 @@ name: Deploy latest release to GitHub Pages
 
 # The published site always reflects the most recent release, not the tip of
 # main. Pushing to main changes nothing that is live until you cut a release.
+#
+# One-time setup: Settings -> Pages -> Source: "GitHub Actions".
+# The workflow token cannot turn Pages on by itself (creating a Pages site
+# needs repo admin rights, which GITHUB_TOKEN does not have), so this switch
+# has to be flipped by hand once. Until it is, the deploy job fails with
+# "Resource not accessible by integration".
 on:
   release:
     types: [published]
@@ -54,13 +60,13 @@ jobs:
     if: needs.resolve.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
 
       # Decodes exmple_log/LOG00015.BFL and asserts frame count, duration,
       # sample rate and per-field min/max. Exits non-zero on any mismatch, so a
@@ -77,20 +83,20 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
-      # enablement: true turns Pages on via the API if it isn't already, so
-      # there is no need to flip the switch in Settings by hand first.
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      # The site is static and needs no build step, so publish the tag as-is.
-      - uses: actions/upload-pages-artifact@v3
+      # No actions/configure-pages step: it exists to hand a base URL to static
+      # site generators, and every path in this site is relative, so it only
+      # added a step that could fail.
+      #
+      # The site needs no build, so publish the tag as-is. Leave
+      # include-hidden-files at its default of false: with path "." turning it
+      # on would sweep .git into the published artifact.
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: .
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

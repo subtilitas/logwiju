@@ -1,0 +1,92 @@
+name: Deploy latest release to GitHub Pages
+
+# The published site always reflects the most recent release, not the tip of
+# main. Pushing to main changes nothing that is live until you cut a release.
+on:
+  release:
+    types: [published]
+  # Re-deploy the current latest release without publishing anything new.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once. Don't cancel a run already in flight —
+# letting it finish leaves the site in a known state.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve latest release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      deploy: ${{ steps.pick.outputs.deploy }}
+    steps:
+      # Publishing an older release, or re-publishing one out of order, would
+      # otherwise overwrite the site with stale code. Only ever deploy the tag
+      # GitHub itself considers latest. Note that /releases/latest ignores
+      # drafts and prereleases, so a prerelease never reaches the live site.
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          latest=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)
+          echo "Latest release: $latest"
+          echo "tag=$latest" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${EVENT_TAG:-}" ] && [ "$EVENT_TAG" != "$latest" ]; then
+            echo "::notice::$EVENT_TAG is not the latest release ($latest) - skipping deploy"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Verify decoder
+    needs: resolve
+    if: needs.resolve.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Decodes exmple_log/LOG00015.BFL and asserts frame count, duration,
+      # sample rate and per-field min/max. Exits non-zero on any mismatch, so a
+      # broken encoding or predictor blocks the release from going live.
+      - name: Run decoder regression test
+        run: node test/verify.mjs
+
+  deploy:
+    name: Deploy
+    needs: [resolve, test]
+    if: needs.resolve.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - uses: actions/configure-pages@v5
+
+      # The site is static and needs no build step, so publish the tag as-is.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

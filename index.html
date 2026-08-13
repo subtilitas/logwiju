@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>logwiju — Betaflight Blackbox Viewer</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path d="M2 17 L7 9 L11 14 L15 5 L22 17" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span>logwiju</span>
+  </div>
+
+  <button id="pick" class="btn">Open log…</button>
+  <select id="session" class="select" style="display:none"></select>
+  <span id="file-name" class="file-name"></span>
+
+  <div class="spacer"></div>
+
+  <div class="zoom-group">
+    <button id="zoom-out" class="btn icon" title="Zoom out (−)">−</button>
+    <button id="zoom-fit" class="btn" title="Fit whole log (0 / double-click)">Fit</button>
+    <button id="zoom-in" class="btn icon" title="Zoom in (+)">+</button>
+  </div>
+
+  <span id="status"></span>
+  <input type="file" id="file" accept=".bfl,.bbl,.txt,.log,application/octet-stream" hidden>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <h2>Log</h2>
+      <div id="info" class="info">
+        <div class="row muted">No log loaded</div>
+      </div>
+    </section>
+
+    <section class="panel grow">
+      <h2>
+        Fields
+        <button id="clear-fields" class="btn tiny" title="Deselect all fields">clear</button>
+      </h2>
+      <div id="fields" class="fields">
+        <div class="muted pad">Fields appear here once a log is loaded.</div>
+      </div>
+    </section>
+  </aside>
+
+  <section class="chart-area">
+    <div class="canvas-wrap">
+      <canvas id="chart"></canvas>
+
+      <div id="empty" class="empty">
+        <h3>Drop a Betaflight blackbox log here</h3>
+        <p><code>.BFL</code> or <code>.BBL</code> straight off the flight controller or SD card.</p>
+        <button id="pick-empty" class="btn primary">Choose a file…</button>
+        <p class="hint">Try <code>exmple_log/LOG00015.BFL</code> from this repo.</p>
+      </div>
+
+      <!-- Shown only if the ES modules never loaded, which in practice means
+           the page was opened directly from disk (browsers block module
+           imports over file:// for security reasons). -->
+      <div id="boot-error" class="empty boot-error" hidden>
+        <h3>This page needs to be served over HTTP</h3>
+        <p>Browsers block JavaScript modules loaded from <code>file://</code>, so opening
+           <code>index.html</code> by double-clicking it will not work.</p>
+        <p>Start a tiny local server from the project folder, then reload:</p>
+        <pre><code>python3 -m http.server 8000</code></pre>
+        <p class="hint">Then open <code>http://localhost:8000</code></p>
+      </div>
+    </div>
+
+    <div id="scrollbar" class="scrollbar"><div class="thumb"></div></div>
+
+    <div class="statusbar">
+      <span id="readout"></span>
+      <span class="spacer"></span>
+      <span class="keys">
+        <b>wheel</b> zoom · <b>drag</b> pan · <b>shift+drag</b> box zoom ·
+        <b>shift+wheel</b> scroll · <b>double-click</b> fit · <b>←/→</b> pan · <b>+/−/0</b> zoom
+      </span>
+    </div>
+  </section>
+</main>
+
+<div id="drop" class="dropzone"><div>Release to load log</div></div>
+
+<script type="module" src="js/app.js"></script>
+<script>
+  // Classic (non-module) boot check: if app.js never ran, explain why.
+  setTimeout(function () {
+    if (!window.__logwijuLoaded) {
+      document.getElementById('empty').hidden = true;
+      document.getElementById('boot-error').hidden = false;
+    }
+  }, 1500);
+</script>
+</body>
+</html>

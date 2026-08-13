@@ -1,0 +1,11 @@
+# Normalise line endings so the repo stays LF regardless of who checks it out.
+# Without this, a Windows checkout rewrites files to CRLF and every one of them
+# shows up as fully modified in git diff.
+* text=auto eol=lf
+
+# Blackbox logs are binary — never touch their bytes.
+*.bfl binary
+*.BFL binary
+*.bbl binary
+*.BBL binary
+*.png binary
